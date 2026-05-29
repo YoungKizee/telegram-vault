@@ -66,6 +66,8 @@ async def serve_ui():
             }
             .glow-text { text-shadow: 0 0 25px rgba(139, 92, 246, 0.5); }
             .glow-border:focus { border-color: rgba(139, 92, 246, 0.5); box-shadow: 0 0 15px rgba(139, 92, 246, 0.15); }
+            .loader { border-top-color: #8b5cf6; animation: spinner 0.6s linear infinite; }
+            @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         </style>
     </head>
     <body class="p-4 max-w-3xl mx-auto pb-24">
@@ -75,6 +77,11 @@ async def serve_ui():
                 <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 tracking-tight glow-text">SENZ1</h1>
             </div>
             <div class="text-xs px-3 py-1 rounded-full border border-emerald-500/30 text-emerald-400 font-mono bg-emerald-500/5">CLOUD SECURE</div>
+        </div>
+
+        <div id="uploadStatusPanel" class="hidden glass p-4 rounded-xl mb-4 border border-violet-500/20 flex items-center gap-3">
+            <div class="loader ease-linear rounded-full border-2 border-t-2 border-gray-800 h-5 w-5"></div>
+            <span id="statusMessage" class="text-xs font-mono tracking-wide text-violet-400">Processing secure cloud transmission...</span>
         </div>
 
         <div id="statsPanel" class="grid grid-cols-3 gap-3 mb-6 text-center text-xs">
@@ -126,8 +133,13 @@ async def serve_ui():
             </button>
         </div>
 
-        <div class="flex items-center gap-2 mb-4 text-xs text-gray-500 font-medium px-1 bg-white/5 py-2.5 rounded-lg border border-white/5" id="breadcrumbs">
-            <button onclick="navigateTo('root')" class="hover:text-violet-400 transition ml-2">My Drive</button>
+        <div class="flex items-center gap-2 mb-4 text-xs font-medium px-1 bg-white/5 py-2 rounded-lg border border-white/5">
+            <button onclick="navigateUpOneLevel()" class="p-1.5 rounded bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition flex items-center justify-center mr-1" title="Go back one folder">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+            <div class="flex items-center gap-1.5 flex-wrap" id="breadcrumbs">
+                <button onclick="navigateTo('root')" class="hover:text-violet-400 transition">My Drive</button>
+            </div>
         </div>
 
         <div id="driveGrid" class="grid grid-cols-2 gap-3">
@@ -137,9 +149,8 @@ async def serve_ui():
             let currentFolder = 'root';
             let folderHistory = [{id: 'root', name: 'My Drive'}];
             let activeTypeFilter = 'all';
-            let currentViewLayout = 'grid'; // grid or list
+            let currentViewLayout = 'grid'; 
 
-            // Multi-Format UI Asset Badge Resolver (Feature 7)
             function getFileBadge(filename) {
                 const ext = filename.split('.').pop().toLowerCase();
                 let color = "bg-gray-500/10 text-gray-400 border-gray-500/20";
@@ -162,7 +173,6 @@ async def serve_ui():
                 
                 grid.innerHTML = '';
                 
-                // Process item tracking counters dynamically
                 let folderCount = 0, fileCount = 0, starredCount = 0;
                 Object.values(items).forEach(i => {
                     if(i.type === 'folder') folderCount++; else fileCount++;
@@ -172,13 +182,11 @@ async def serve_ui():
                 document.getElementById('statFiles').innerText = fileCount;
                 document.getElementById('statStarred').innerText = starredCount;
 
-                // Feature 2 Logic: Apply Search Strings
                 let itemList = Object.entries(items).map(([id, data]) => ({id, ...data}));
                 if(searchQuery) {
                     itemList = itemList.filter(i => i.name.toLowerCase().includes(searchQuery));
                 }
 
-                // Feature 4 Logic: Apply Global Smart Filters
                 if(activeTypeFilter !== 'all') {
                     itemList = itemList.filter(item => {
                         if (item.type === 'folder') return false;
@@ -191,7 +199,6 @@ async def serve_ui():
                     });
                 }
 
-                // Feature 5 Logic: Sorting Engine Execution
                 itemList.sort((a, b) => {
                     if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
                     if (sortBy === 'name-desc') return b.name.localeCompare(a.name);
@@ -204,7 +211,6 @@ async def serve_ui():
                     return;
                 }
 
-                // Adjust grid system columns for List vs Grid view (Feature 6)
                 if (currentViewLayout === 'list') {
                     grid.className = "flex flex-col gap-2";
                 } else {
@@ -217,7 +223,6 @@ async def serve_ui():
                         <svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                     </button>`;
 
-                    // Action dropdown trigger simulation (Features 8, 9, 10)
                     const ActionMenu = `
                         <div class="flex items-center gap-1.5 bg-black/40 rounded-lg p-0.5 border border-white/5 relative z-20">
                             ${starIcon}
@@ -227,7 +232,6 @@ async def serve_ui():
                         </div>`;
 
                     if (currentViewLayout === 'list') {
-                        // Compact List Rendering Layout Template
                         if (item.type === 'folder') {
                             grid.innerHTML += `
                                 <div class="glass p-3 rounded-xl flex items-center justify-between border border-white/5 relative hover:bg-white/5 transition">
@@ -248,7 +252,6 @@ async def serve_ui():
                                 </div>`;
                         }
                     } else {
-                        // Standard Grid Rendering Layout Template
                         if (item.type === 'folder') {
                             grid.innerHTML += `
                                 <div class="glass p-3.5 rounded-2xl border border-white/5 flex flex-col justify-between h-32 relative hover:bg-white/5 transition group">
@@ -287,195 +290,14 @@ async def serve_ui():
                 loadItems();
             }
 
+            function navigateUpOneLevel() {
+                if (folderHistory.length <= 1) return; // Already at Root level
+                folderHistory.pop();
+                const parentFolder = folderHistory[folderHistory.length - 1];
+                currentFolder = parentFolder.id;
+                updateBreadcrumbs();
+                loadItems();
+            }
+
             function updateBreadcrumbs() {
-                const bc = document.getElementById('breadcrumbs');
-                bc.innerHTML = folderHistory.map((f, index) => {
-                    const isLast = index === folderHistory.length - 1;
-                    return `<span class="cursor-pointer px-1 py-0.5 rounded ${isLast ? 'text-violet-400 font-semibold bg-violet-500/10' : 'hover:text-gray-200 transition'}" 
-                                  onclick="navigateTo('${f.id}')">${f.name}</span>`;
-                }).join(' <span class="text-gray-700">/</span> ');
-            }
-
-            function filterByType(type) {
-                activeTypeFilter = type;
-                document.querySelectorAll('#typeFilters button').forEach(b => {
-                    b.className = "glass px-4 py-2 rounded-lg font-medium text-gray-400 hover:text-white transition shrink-0";
-                });
-                document.getElementById(`filter-${type}`).className = "px-4 py-2 rounded-lg font-medium bg-violet-600 text-white transition shrink-0";
-                loadItems();
-            }
-
-            function toggleLayout() {
-                currentViewLayout = currentViewLayout === 'grid' ? 'list' : 'grid';
-                document.getElementById('layoutToggleBtn').innerHTML = currentViewLayout === 'grid' ? 
-                    `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>` : 
-                    `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5h16M4 10h16M4 15h16M4 20h16"></path></svg>`;
-                loadItems();
-            }
-
-            async function createFolder() {
-                const folderName = prompt("Enter new folder name:");
-                if (!folderName) return;
-                await fetch('/api/folders', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ name: folderName, parent_id: currentFolder })
-                });
-                loadItems();
-            }
-
-            async function uploadFile() {
-                const input = document.getElementById('fileInput');
-                if(input.files.length === 0) return;
-                
-                const formData = new FormData();
-                formData.append('file', input.files[0]);
-                formData.append('parent_id', currentFolder); // Uploads directly inside active folder context (Feature 11)
-                
-                const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                input.value = ''; 
-                if(res.ok) loadItems();
-                else alert("Upload operation encountered a cloud pipeline error.");
-            }
-
-            async function toggleStar(id, event) {
-                event.stopPropagation();
-                event.preventDefault();
-                await fetch(`/api/star/${id}`, { method: 'POST' });
-                loadItems();
-            }
-
-            async function renameItem(id, currentName, event) {
-                event.stopPropagation();
-                event.preventDefault();
-                const newName = prompt("Rename item:", currentName);
-                if(!newName || newName === currentName) return;
-                await fetch(`/api/rename/${id}`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ name: newName })
-                });
-                loadItems();
-            }
-
-            async function deleteItem(id, event) {
-                event.stopPropagation();
-                event.preventDefault();
-                if(!confirm("Are you sure you want to permanently delete this item?")) return;
-                await fetch(`/api/delete/${id}`, { method: 'DELETE' });
-                loadItems();
-            }
-
-            function copyShareLink(id, event) {
-                event.stopPropagation();
-                event.preventDefault();
-                const shareUrl = `${window.location.origin}/api/download/${id}`;
-                navigator.clipboard.writeText(shareUrl).then(() => {
-                    alert("Streamable download link copied to clipboard!");
-                });
-            }
-
-            loadItems();
-        </script>
-    </body>
-    </html>
-    """
-
-# --- EXTENDED API HANDLERS ---
-
-class FolderRequest(BaseModel):
-    name: str
-    parent_id: str
-
-class RenameRequest(BaseModel):
-    name: str
-
-@app.post("/api/folders")
-async def create_new_folder(req: FolderRequest):
-    folder_id = "fld_" + str(uuid.uuid4())[:8]
-    vault_db[folder_id] = {
-        "type": "folder",
-        "name": req.name,
-        "parent_id": req.parent_id,
-        "tg_id": None,
-        "starred": False
-    }
-    await save_db()
-    return {"success": True}
-
-@app.post("/api/upload")
-async def upload_file(parent_id: str = Form(...), file: UploadFile = File(...)):
-    if not BOT_TOKEN or not STORAGE_CHANNEL_ID:
-        raise HTTPException(status_code=500, detail="Configuration properties missing.")
-        
-    file_bytes = await file.read()
-    
-    telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(
-            telegram_url,
-            data={"chat_id": STORAGE_CHANNEL_ID},
-            files={"document": (file.filename, file_bytes)}
-        )
-        res_data = response.json()
-        
-    if not res_data.get("ok"):
-        raise HTTPException(status_code=500, detail="Telegram cluster synchronization failed.")
-
-    tg_file_id = res_data["result"]["document"]["file_id"]
-    db_id = "doc_" + str(uuid.uuid4())[:8]
-    
-    vault_db[db_id] = {
-        "type": "file",
-        "name": file.filename, 
-        "parent_id": parent_id,
-        "tg_id": tg_file_id,
-        "starred": False
-    }
-    await save_db()
-    return {"success": True}
-
-@app.get("/api/items")
-async def get_items(parent_id: str = "root"):
-    return {k: v for k, v in vault_db.items() if v.get("parent_id") == parent_id}
-
-@app.post("/api/star/{item_id}")
-async def toggle_star_item(item_id: str):
-    if item_id in vault_db:
-        vault_db[item_id]["starred"] = not vault_db[item_id].get("starred", False)
-        await save_db()
-    return {"success": True}
-
-@app.post("/api/rename/{item_id}")
-async def rename_item(item_id: str, req: RenameRequest):
-    if item_id in vault_db:
-        vault_db[item_id]["name"] = req.name
-        await save_db()
-    return {"success": True}
-
-@app.delete("/api/delete/{item_id}")
-async def delete_item(item_id: str):
-    if item_id in vault_db:
-        # If it's a folder, cascading clean items inside it back to root
-        if vault_db[item_id]["type"] == "folder":
-            for k, v in list(vault_db.items()):
-                if v.get("parent_id") == item_id:
-                    del vault_db[k]
-        del vault_db[item_id]
-        await save_db()
-    return {"success": True}
-
-@app.get("/api/download/{item_id}")
-async def download_file(item_id: str):
-    if item_id not in vault_db or vault_db[item_id]["type"] == "folder":
-        raise HTTPException(status_code=404, detail="Requested file asset missing.")
-    
-    tg_id = vault_db[item_id]["tg_id"]
-    async with httpx.AsyncClient() as client:
-        info = await client.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={tg_id}")
-        file_path = info.json()["result"]["file_path"]
-        download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-        return HTMLResponse(f"<script>window.location.href='{download_url}';</script>")
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=10000)
+                const bc = document.g
