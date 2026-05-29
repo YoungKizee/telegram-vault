@@ -1,56 +1,146 @@
 import os
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import uuid
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import httpx
 
-# 1. Production Configurations (Safely reads from Render Environment Settings)
+# Configurations (Safely reads from Render Environment Settings)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STORAGE_CHANNEL_ID = os.getenv("STORAGE_CHANNEL_ID") 
 
 app = FastAPI()
-file_vault = {}  # Temporary storage tracker for your files
 
-# 2. Creative Dashboard Frontend HTML
+# Upgraded Database simulating a real file system with folders
+vault_db = {} 
+
+# --- AESTHETIC CINEMATIC FRONTEND ---
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     return """
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Vault UI</title>
+        <title>VaultOS Cinematic</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+            body { 
+                background-color: #030305; 
+                background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #030305 60%);
+                color: #e5e5e5; 
+                font-family: 'Inter', sans-serif; 
+                min-height: 100vh;
+            }
+            .glass-panel { 
+                background: rgba(255, 255, 255, 0.02); 
+                backdrop-filter: blur(16px); 
+                -webkit-backdrop-filter: blur(16px);
+                border: 1px solid rgba(255, 255, 255, 0.05); 
+                box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            }
+            .cinematic-glow { text-shadow: 0 0 20px rgba(167, 139, 250, 0.4); }
+            .item-hover:hover { background: rgba(255, 255, 255, 0.05); border-color: rgba(167, 139, 250, 0.3); }
+        </style>
     </head>
-    <body class="bg-slate-900 text-slate-100 p-6 max-w-md mx-auto">
-        <div class="mb-6">
-            <h1 class="text-2xl font-bold text-cyan-400">VaultOS v1.0</h1>
-            <p class="text-xs text-slate-400">Custom Storage Interface</p>
+    <body class="p-6 max-w-2xl mx-auto">
+        
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-indigo-500 cinematic-glow">VaultOS</h1>
+                <p class="text-xs text-indigo-300/50 tracking-widest uppercase mt-1">Cinematic Cloud Engine</p>
+            </div>
+            <div class="text-xs px-3 py-1 rounded-full border border-indigo-500/30 text-indigo-400 glass-panel">LIVE</div>
         </div>
 
-        <div class="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center bg-slate-800/50 hover:border-cyan-500 transition relative mb-6">
-            <input type="file" id="fileInput" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="uploadFile()" />
-            <p class="text-sm">Click or Drag & Drop a file here</p>
+        <div class="flex gap-3 mb-6">
+            <button onclick="createFolder()" class="glass-panel flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-medium hover:bg-white/5 transition">
+                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg>
+                New Folder
+            </button>
+            <div class="glass-panel flex-1 relative rounded-xl hover:bg-white/5 transition flex items-center justify-center">
+                <input type="file" id="fileInput" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="uploadFile()" />
+                <div class="flex items-center justify-center gap-2 text-sm font-medium">
+                    <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Upload File
+                </div>
+            </div>
         </div>
 
-        <h2 class="text-xs font-bold uppercase text-slate-500 tracking-wider mb-2">Your Cloud Files</h2>
-        <div id="fileList" class="space-y-2"></div>
+        <div class="flex items-center gap-2 mb-4 text-sm text-gray-400" id="breadcrumbs">
+            <button onclick="navigateTo('root')" class="hover:text-violet-400 transition">My Drive</button>
+        </div>
+
+        <div id="driveGrid" class="grid grid-cols-2 gap-4">
+            </div>
 
         <script>
-            async function loadFiles() {
-                const res = await fetch('/api/files');
-                const data = await res.json();
-                const list = document.getElementById('fileList');
-                list.innerHTML = '';
+            let currentFolder = 'root';
+            let folderHistory = [{id: 'root', name: 'My Drive'}];
+
+            async function loadItems() {
+                const res = await fetch(`/api/items?parent_id=${currentFolder}`);
+                const items = await res.json();
+                const grid = document.getElementById('driveGrid');
+                grid.innerHTML = '';
                 
-                for (const [id, file] of Object.entries(data)) {
-                    list.innerHTML += `
-                        <div class="bg-slate-800 p-3 rounded-lg flex justify-between items-center">
-                            <span class="text-sm truncate w-2/3">${file.filename}</span>
-                            <a href="/api/download/${id}" target="_blank" class="bg-cyan-600 px-3 py-1 text-xs rounded hover:bg-cyan-500">Download</a>
-                        </div>`;
+                if (Object.keys(items).length === 0) {
+                    grid.innerHTML = `<div class="col-span-2 text-center py-12 text-gray-600 text-sm">This folder is empty.</div>`;
+                    return;
                 }
+
+                // Render Folders First, then Files
+                for (const [id, item] of Object.entries(items)) {
+                    if (item.type === 'folder') {
+                        grid.innerHTML += `
+                            <div onclick="navigateTo('${id}', '${item.name}')" class="glass-panel p-4 rounded-2xl item-hover cursor-pointer transition flex flex-col items-center justify-center text-center h-32 gap-3 group">
+                                <svg class="w-10 h-10 text-indigo-400/70 group-hover:text-indigo-400 transition" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>
+                                <span class="text-sm font-medium text-gray-300 truncate w-full px-2">${item.name}</span>
+                            </div>`;
+                    } else {
+                        grid.innerHTML += `
+                            <div class="glass-panel p-4 rounded-2xl item-hover transition flex flex-col items-center justify-center text-center h-32 gap-3 group relative">
+                                <svg class="w-9 h-9 text-gray-500 group-hover:text-violet-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                                <span class="text-xs font-medium text-gray-400 truncate w-full px-2">${item.name}</span>
+                                <a href="/api/download/${id}" target="_blank" class="absolute inset-0 z-10"></a>
+                            </div>`;
+                    }
+                }
+            }
+
+            function navigateTo(folderId, folderName) {
+                if (folderId === 'root') {
+                    folderHistory = [{id: 'root', name: 'My Drive'}];
+                } else {
+                    folderHistory.push({id: folderId, name: folderName});
+                }
+                currentFolder = folderId;
+                updateBreadcrumbs();
+                loadItems();
+            }
+
+            function updateBreadcrumbs() {
+                const bc = document.getElementById('breadcrumbs');
+                bc.innerHTML = folderHistory.map((f, index) => {
+                    const isLast = index === folderHistory.length - 1;
+                    return `<span class="cursor-pointer ${isLast ? 'text-violet-400 font-medium' : 'hover:text-violet-400 transition'}" 
+                                  onclick="navigateTo('${f.id}')">${f.name}</span>`;
+                }).join(' <span class="text-gray-600">/</span> ');
+            }
+
+            async function createFolder() {
+                const folderName = prompt("Enter folder name:");
+                if (!folderName) return;
+                
+                await fetch('/api/folders', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name: folderName, parent_id: currentFolder })
+                });
+                loadItems();
             }
 
             async function uploadFile() {
@@ -59,29 +149,47 @@ async def serve_ui():
                 
                 const formData = new FormData();
                 formData.append('file', input.files[0]);
+                formData.append('parent_id', currentFolder);
+                
+                input.value = ''; // Reset input
+                // In a real app, you'd add a loading spinner here
                 
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                if(res.ok) {
-                    loadFiles();
-                } else {
-                    alert("Upload error encountered.");
-                }
+                if(res.ok) loadItems();
+                else alert("Upload failed.");
             }
-            loadFiles();
+
+            loadItems(); // Initial load
         </script>
     </body>
     </html>
     """
 
-# 3. File Upload Engine Pipeline
+# --- BACKEND LOGIC FOR FOLDERS & FILES ---
+
+class FolderRequest(BaseModel):
+    name: str
+    parent_id: str
+
+@app.post("/api/folders")
+async def create_new_folder(req: FolderRequest):
+    folder_id = "fld_" + str(uuid.uuid4())[:8]
+    vault_db[folder_id] = {
+        "type": "folder",
+        "name": req.name,
+        "parent_id": req.parent_id,
+        "tg_id": None
+    }
+    return {"success": True, "id": folder_id}
+
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(parent_id: str = Form(...), file: UploadFile = File(...)):
     if not BOT_TOKEN or not STORAGE_CHANNEL_ID:
-        raise HTTPException(status_code=500, detail="Server config keys missing on Render dashboard.")
+        raise HTTPException(status_code=500, detail="Server config missing.")
         
     file_bytes = await file.read()
     
-    # Send the raw file data straight into Telegram's storage cluster
+    # Send to Telegram
     telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
@@ -94,35 +202,35 @@ async def upload_file(file: UploadFile = File(...)):
     if not res_data.get("ok"):
         raise HTTPException(status_code=500, detail="Telegram cloud transfer failed.")
 
-    # Harvest Telegram's unique storage key for this file
     tg_file_id = res_data["result"]["document"]["file_id"]
-    db_id = str(len(file_vault) + 1)
+    db_id = "doc_" + str(uuid.uuid4())[:8]
     
-    # Store reference index securely mapping back to original file name
-    file_vault[db_id] = {"filename": file.filename, "telegram_id": tg_file_id}
-    return {"success": True, "id": db_id}
+    vault_db[db_id] = {
+        "type": "file",
+        "name": file.filename, 
+        "parent_id": parent_id,
+        "tg_id": tg_file_id
+    }
+    return {"success": True}
 
-# 4. Storage Fetch Registry API
-@app.get("/api/files")
-async def get_files():
-    return file_vault
+@app.get("/api/items")
+async def get_items(parent_id: str = "root"):
+    # Filter the database to only show items inside the current folder
+    filtered_items = {k: v for k, v in vault_db.items() if v["parent_id"] == parent_id}
+    return filtered_items
 
-# 5. File Download Direct Pipeline
-@app.get("/api/download/{file_id}")
-async def download_file(file_id: str):
-    if file_id not in file_vault:
-        raise HTTPException(status_code=404, detail="File index missing.")
+@app.get("/api/download/{item_id}")
+async def download_file(item_id: str):
+    if item_id not in vault_db or vault_db[item_id]["type"] == "folder":
+        raise HTTPException(status_code=404, detail="File missing.")
     
-    tg_id = file_vault[file_id]["telegram_id"]
+    tg_id = vault_db[item_id]["tg_id"]
     async with httpx.AsyncClient() as client:
-        # Ask Telegram where the binary file is located
         info = await client.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={tg_id}")
         file_path = info.json()["result"]["file_path"]
-        
-        # Build direct streaming download destination address link
         download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        
         return HTMLResponse(f"<script>window.location.href='{download_url}';</script>")
 
 if __name__ == "__main__":
-    # Crucial adjustment: Render maps web projects directly via port 10000
     uvicorn.run("main:app", host="0.0.0.0", port=10000)
