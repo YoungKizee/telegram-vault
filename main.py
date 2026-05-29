@@ -1,19 +1,44 @@
 import os
 import uvicorn
 import uuid
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import httpx
 
-# Configurations (Safely reads from Render Environment Settings)
+# Configurations
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STORAGE_CHANNEL_ID = os.getenv("STORAGE_CHANNEL_ID") 
+KVDB_BUCKET = os.getenv("KVDB_BUCKET") # Your new permanent cloud database
 
-app = FastAPI()
-
-# Upgraded Database simulating a real file system with folders
 vault_db = {} 
+
+# --- DATABASE SYNC LOGIC ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Fetches your saved folders and files when the server wakes up"""
+    global vault_db
+    if KVDB_BUCKET:
+        async with httpx.AsyncClient() as client:
+            try:
+                res = await client.get(f"https://kvdb.io/{KVDB_BUCKET}/vault")
+                if res.status_code == 200 and res.text:
+                    vault_db = res.json()
+            except Exception:
+                pass
+    yield
+
+async def save_db():
+    """Saves data instantly to the cloud every time you upload or create a folder"""
+    if KVDB_BUCKET:
+        async with httpx.AsyncClient() as client:
+            try:
+                await client.post(f"https://kvdb.io/{KVDB_BUCKET}/vault", json=vault_db)
+            except Exception:
+                pass
+
+app = FastAPI(lifespan=lifespan)
 
 # --- AESTHETIC CINEMATIC FRONTEND ---
 @app.get("/", response_class=HTMLResponse)
@@ -151,21 +176,20 @@ async def serve_ui():
                 formData.append('file', input.files[0]);
                 formData.append('parent_id', currentFolder);
                 
-                input.value = ''; // Reset input
-                // In a real app, you'd add a loading spinner here
+                input.value = ''; 
                 
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
                 if(res.ok) loadItems();
                 else alert("Upload failed.");
             }
 
-            loadItems(); // Initial load
+            loadItems();
         </script>
     </body>
     </html>
     """
 
-# --- BACKEND LOGIC FOR FOLDERS & FILES ---
+# --- BACKEND API ROUTES ---
 
 class FolderRequest(BaseModel):
     name: str
@@ -180,6 +204,7 @@ async def create_new_folder(req: FolderRequest):
         "parent_id": req.parent_id,
         "tg_id": None
     }
+    await save_db()  # <-- Triggers permanent save
     return {"success": True, "id": folder_id}
 
 @app.post("/api/upload")
@@ -189,7 +214,6 @@ async def upload_file(parent_id: str = Form(...), file: UploadFile = File(...)):
         
     file_bytes = await file.read()
     
-    # Send to Telegram
     telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
@@ -211,13 +235,12 @@ async def upload_file(parent_id: str = Form(...), file: UploadFile = File(...)):
         "parent_id": parent_id,
         "tg_id": tg_file_id
     }
+    await save_db()  # <-- Triggers permanent save
     return {"success": True}
 
 @app.get("/api/items")
 async def get_items(parent_id: str = "root"):
-    # Filter the database to only show items inside the current folder
-    filtered_items = {k: v for k, v in vault_db.items() if v["parent_id"] == parent_id}
-    return filtered_items
+    return {k: v for k, v in vault_db.items() if v.get("parent_id") == parent_id}
 
 @app.get("/api/download/{item_id}")
 async def download_file(item_id: str):
@@ -234,3 +257,4 @@ async def download_file(item_id: str):
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=10000)
+    
